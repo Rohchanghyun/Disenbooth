@@ -18,3 +18,4 @@ accelerate launch train_disenbooth.py \
   --validation_prompt="A photo of a person</w> person" \
   --validation_epochs=200 \
   --seed="48" \
+ 

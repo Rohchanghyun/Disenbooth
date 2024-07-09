@@ -32,6 +32,7 @@ from disen_net import Image_adapter, cal_cos
 import torch.nn as nn
 from utils.RandomSampler import RandomSampler
 
+
 import diffusers
 from diffusers import (
     AutoencoderKL,
@@ -462,7 +463,8 @@ class DreamBoothDataset(Dataset):
         self.num_instance_images = len(self.instance_images_path)
         self.instance_prompt = instance_prompt
         self._length = self.num_instance_images
-        self.num_ids = len(set(self.person_ids))
+        self.num_ids = len(self.person_ids)
+        
         if class_data_root is not None:
             self.class_data_root = Path(class_data_root)
             self.class_data_root.mkdir(parents=True, exist_ok=True)
@@ -523,13 +525,14 @@ class DreamBoothDataset(Dataset):
                 example["class_attention_mask"] = class_text_inputs.attention_mask
 
         return example
+    
     @staticmethod
     def id(file_path):
         """
         :param file_path: unix style file path
         :return: person id
         """
-        return int(file_path.split('/')[-2])
+        return int(str(file_path).split('/')[-2])
     
     @property
     def unique_ids(self):
@@ -934,7 +937,7 @@ def main(args):
 
     train_dataloader = torch.utils.data.DataLoader(
         train_dataset,
-        sampler = RandomSampler(train_dataset, batch_id=1, batch_image=args.train_batch_size),
+        sampler = RandomSampler(train_dataset, batch_id=1,batch_image=args.train_batch_size),
         batch_size=args.train_batch_size,
         shuffle=False,
         collate_fn=lambda examples: collate_fn(examples, args.with_prior_preservation),

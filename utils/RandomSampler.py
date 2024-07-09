@@ -1,5 +1,6 @@
 import random
 import collections
+import pdb
 from torch.utils.data import sampler
 
 
@@ -22,7 +23,7 @@ class RandomSampler(sampler.Sampler):
 
         imgs = []
         for _id in unique_ids:
-            imgs.extend(self._sample(self._id2index[_id], self.batch_image))
+            imgs.extend(self._sample(self._id2index[int(_id)], self.batch_image))
         return iter(imgs)
 
     def __len__(self):
@@ -31,5 +32,7 @@ class RandomSampler(sampler.Sampler):
     @staticmethod
     def _sample(population, k):
         if len(population) < k:
+            pdb.set_trace()
             population = population * k
         return random.sample(population, k)
+
