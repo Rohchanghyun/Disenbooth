@@ -1,3 +1,7 @@
 wandb/
 .ipynb_checkpoints
+output/**/*.pt
+output/**/*.bin
+output/**/*.safetensors
+output/**/*.pkl
 __pycache__
