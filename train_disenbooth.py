@@ -11,6 +11,7 @@ import warnings
 from pathlib import Path
 import random
 import pdb
+import wandb
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -180,9 +181,18 @@ def parse_args(input_args=None):
     )
     parser.add_argument("--seed", type=int, default=None, help="A seed for reproducible training.")
     parser.add_argument(
-        "--resolution",
+        "--resolution1",
         type=int,
-        default=512,
+        default=384,
+        help=(
+            "The resolution for input images, all the images in the train/validation dataset will be resized to this"
+            " resolution"
+        ),
+    )
+    parser.add_argument(
+        "--resolution2",
+        type=int,
+        default=192,
         help=(
             "The resolution for input images, all the images in the train/validation dataset will be resized to this"
             " resolution"
@@ -326,7 +336,7 @@ def parse_args(input_args=None):
     parser.add_argument(
         "--report_to",
         type=str,
-        default="tensorboard",
+        default="wandb",
         help=(
             'The integration to report the results and logs to. Supported platforms are `"tensorboard"`'
             ' (default), `"wandb"` and `"comet_ml"`. Use `"all"` to report to all integrations.'
@@ -394,6 +404,8 @@ def parse_args(input_args=None):
         default=4,
         help=("The dimension of the LoRA update matrices."),
     )
+    parser.add_argument("--wandb_project_name", type=str, default="CC-ReID", help="The name of the W&B project.")
+    parser.add_argument("--wandb_run_name", type=str, default="DisenBooth-prcc", help="The name of the W&B run.")
 
     if input_args is not None:
         args = parser.parse_args(input_args)
@@ -495,6 +507,7 @@ class DreamBoothDataset(Dataset):
         if not instance_image.mode == "RGB":
             instance_image = instance_image.convert("RGB")
         example["instance_images"] = self.image_transforms(instance_image)
+        example["instance_images_path"] = self.instance_images_path[index % self.num_instance_images]
 
         person_id = self.person_ids[index % self.num_instance_images]
         example["person_id"] = person_id
@@ -506,6 +519,7 @@ class DreamBoothDataset(Dataset):
             )
             example["instance_prompt_ids"] = text_inputs.input_ids
             example["instance_attention_mask"] = text_inputs.attention_mask
+            
 
         if self.class_data_root:
             class_image = Image.open(self.class_images_path[index % self.num_class_images])
@@ -523,6 +537,7 @@ class DreamBoothDataset(Dataset):
                 )
                 example["class_prompt_ids"] = class_text_inputs.input_ids
                 example["class_attention_mask"] = class_text_inputs.attention_mask
+                
 
         return example
     
@@ -546,6 +561,7 @@ def collate_fn(examples, with_prior_preservation=False):
     has_attention_mask = "instance_attention_mask" in examples[0]
 
     input_ids = [example["instance_prompt_ids"] for example in examples]
+    image_path = [example["instance_images_path"] for example in examples]
     pixel_values = [example["instance_images"] for example in examples]
     person_ids = [example["person_id"] for example in examples]
 
@@ -569,6 +585,7 @@ def collate_fn(examples, with_prior_preservation=False):
         "input_ids": input_ids,
         "pixel_values": pixel_values,
         "person_ids": person_ids,
+        "images_path": image_path
     }
 
     if has_attention_mask:
@@ -707,8 +724,8 @@ def main(args):
     )
     
     clip_trans = transforms.Resize( (224, 224), interpolation=transforms.InterpolationMode.BILINEAR )
-    #img_model, _, preprocess = open_clip.create_model_and_transforms('ViT-H-14', pretrained='laion2b_s32b_b79k') 
-    img_model, _, preprocess = open_clip.create_model_and_transforms('ViT-H-14') 
+    img_model, _, preprocess = open_clip.create_model_and_transforms('ViT-H-14', pretrained='laion2b_s32b_b79k') 
+    #img_model, _, preprocess = open_clip.create_model_and_transforms('ViT-H-14') 
     img_adapter = Image_adapter()
 
     # We only train the additional adapter LoRA layers
@@ -749,7 +766,9 @@ def main(args):
         unet.enable_gradient_checkpointing()
         if args.train_text_encoder:
             text_encoder.gradient_checkpointing_enable()
-
+    
+    
+    wandb.init(entity = "ggara376",project=args.wandb_project_name, name=args.wandb_run_name)
     # now we will add new LoRA weights to the attention layers
     # It's important to realize here how many attention weights will be added and of which sizes
     # The sizes of the attention layers consist only of two different variables:
@@ -928,7 +947,7 @@ def main(args):
         class_prompt=args.class_prompt,
         class_num=args.num_class_images,
         tokenizer=tokenizer,
-        size=args.resolution,
+        size=(args.resolution1,args.resolution2),
         center_crop=args.center_crop,
         encoder_hidden_states=pre_computed_encoder_hidden_states,
         class_prompt_encoder_hidden_states=pre_computed_class_prompt_encoder_hidden_states,
@@ -1091,6 +1110,7 @@ def main(args):
                     )
                     accelerator.clip_grad_norm_(params_to_clip, args.max_grad_norm)
                 logger.info(f"Step {global_step}: Person IDs in this batch: {batch['person_ids']}")
+                #logger.info(f"image path: {batch['images_path']}")
                 optimizer.step()
                 lr_scheduler.step()
                 optimizer.zero_grad()
